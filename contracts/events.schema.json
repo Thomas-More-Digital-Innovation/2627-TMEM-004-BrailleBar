@@ -1,0 +1,169 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "The event contract between all services and the apps. Go structs and packages/shared/src/events.ts must follow it. Each event is an envelope; the keys of $defs are the event types.",
+  "$defs": {
+    "box": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" } }
+    },
+    "pages": {
+      "type": "array",
+      "items": { "type": "array", "items": { "type": "string" } }
+    },
+    "envelope": {
+      "type": "object",
+      "required": ["id", "type", "occurredAt", "payload"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "occurredAt": { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "document.uploaded": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "document.uploaded" },
+            "payload": {
+              "type": "object",
+              "required": ["documentId", "deviceId", "source", "needsOcr"],
+              "additionalProperties": false,
+              "properties": {
+                "documentId": { "type": "string", "minLength": 1 },
+                "deviceId": { "type": "string", "minLength": 1 },
+                "source": { "enum": ["text", "pdf", "word", "image", "scan"] },
+                "needsOcr": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "document.ocr.completed": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "document.ocr.completed" },
+            "payload": {
+              "type": "object",
+              "required": ["documentId", "deviceId", "pages"],
+              "additionalProperties": false,
+              "properties": {
+                "documentId": { "type": "string", "minLength": 1 },
+                "deviceId": { "type": "string", "minLength": 1 },
+                "pages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["page", "width", "height", "lines"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "page": { "type": "integer", "minimum": 1 },
+                      "width": { "type": "number" },
+                      "height": { "type": "number" },
+                      "lines": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": ["text", "box", "words"],
+                          "additionalProperties": false,
+                          "properties": {
+                            "text": { "type": "string" },
+                            "box": { "$ref": "#/$defs/box" },
+                            "words": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": ["text", "box"],
+                                "additionalProperties": false,
+                                "properties": { "text": { "type": "string" }, "box": { "$ref": "#/$defs/box" } }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "document.layout.completed": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "document.layout.completed" },
+            "payload": {
+              "type": "object",
+              "required": ["documentId", "deviceId", "cellsPerLine", "pages"],
+              "additionalProperties": false,
+              "properties": {
+                "documentId": { "type": "string", "minLength": 1 },
+                "deviceId": { "type": "string", "minLength": 1 },
+                "cellsPerLine": { "type": "integer", "minimum": 1 },
+                "pages": { "$ref": "#/$defs/pages" }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "print.job.created": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "print.job.created" },
+            "payload": {
+              "type": "object",
+              "required": ["jobId", "documentId", "deviceId", "pages"],
+              "additionalProperties": false,
+              "properties": {
+                "jobId": { "type": "string", "minLength": 1 },
+                "documentId": { "type": "string", "minLength": 1 },
+                "deviceId": { "type": "string", "minLength": 1 },
+                "pages": { "$ref": "#/$defs/pages" }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "print.job.status": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "print.job.status" },
+            "payload": {
+              "type": "object",
+              "required": ["jobId", "documentId", "deviceId", "state", "page", "pageCount"],
+              "additionalProperties": false,
+              "properties": {
+                "jobId": { "type": "string", "minLength": 1 },
+                "documentId": { "type": "string", "minLength": 1 },
+                "deviceId": { "type": "string", "minLength": 1 },
+                "state": { "enum": ["queued", "sending", "printing", "done", "failed", "cancelled"] },
+                "page": { "type": "integer", "minimum": 0 },
+                "pageCount": { "type": "integer", "minimum": 0 },
+                "reason": { "type": "string" }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "id": "6f1d2c9e-0b7a-4a53-9d0e-1c2b3a4d5e6f",
+  "type": "document.uploaded",
+  "occurredAt": "2026-10-19T09:00:00Z",
+  "payload": { "documentId": "doc-1", "deviceId": "dev-1", "source": "text", "needsOcr": false }
+}

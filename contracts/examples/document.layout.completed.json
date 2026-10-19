@@ -1,0 +1,11 @@
+{
+  "id": "5c4d3e2f-1a0b-4c9d-8e7f-6a5b4c3d2e1f",
+  "type": "document.layout.completed",
+  "occurredAt": "2026-10-19T09:00:06Z",
+  "payload": {
+    "documentId": "doc-1",
+    "deviceId": "dev-1",
+    "cellsPerLine": 30,
+    "pages": [["hello world", "", "second line"]]
+  }
+}

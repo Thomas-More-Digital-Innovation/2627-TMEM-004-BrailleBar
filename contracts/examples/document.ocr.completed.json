@@ -1,0 +1,26 @@
+{
+  "id": "0a9b8c7d-6e5f-4a3b-8c2d-1e0f9a8b7c6d",
+  "type": "document.ocr.completed",
+  "occurredAt": "2026-10-19T09:00:05Z",
+  "payload": {
+    "documentId": "doc-1",
+    "deviceId": "dev-1",
+    "pages": [
+      {
+        "page": 1,
+        "width": 2480,
+        "height": 3508,
+        "lines": [
+          {
+            "text": "hello world",
+            "box": { "x": 100, "y": 120, "w": 600, "h": 40 },
+            "words": [
+              { "text": "hello", "box": { "x": 100, "y": 120, "w": 280, "h": 40 } },
+              { "text": "world", "box": { "x": 420, "y": 120, "w": 280, "h": 40 } }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

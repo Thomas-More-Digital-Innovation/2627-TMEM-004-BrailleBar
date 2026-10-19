@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+
+# Build output
+dist/
+coverage/
+*.exe
+*.test
+*.out
+firmware/test/test_protocol
+.pio/
+
+# Secrets and local settings
+.env
+.env.*
+
+# Logs
+*.log
+
+# Go workspace (each machine makes its own; services build without it thanks to the replace lines)
+go.work
+go.work.sum
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
