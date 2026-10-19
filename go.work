@@ -1,0 +1,10 @@
+go 1.27.1
+
+use (
+	./document-service
+	./gateway
+	./layout-service
+	./notification-service
+	./platform
+	./print-job-service
+)
