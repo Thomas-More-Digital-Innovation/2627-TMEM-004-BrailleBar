@@ -19,12 +19,13 @@ import (
 
 func newTestHandler(t *testing.T) (*Handler, *pgxpool.Pool) {
 	t.Helper()
+	platform.LoadEnvFile("../../.env")
 	url := os.Getenv("DATABASE_URL")
 	if url == "" {
 		t.Skip("DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := pgxpool.New(ctx, url+"?search_path=document")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,5 +111,56 @@ func TestSubmitTextRejectsBadRequests(t *testing.T) {
 				t.Fatalf("got %d (%s), want %d", rec.Code, rec.Body.String(), c.want)
 			}
 		})
+	}
+}
+
+func getContent(h *Handler, id string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("GET", "/documents/"+id+"/content", nil)
+	req.SetPathValue("id", id) // normally the mux fills this from "{id}" in the route
+	rec := httptest.NewRecorder()
+	h.GetContent(rec, req)
+	return rec
+}
+
+func TestGetContentReturnsText(t *testing.T) {
+	h, pool := newTestHandler(t)
+
+	created := submit(h, "dev-test", `{"text":"hello world"}`)
+	var doc struct{ DocumentID string }
+	if err := json.Unmarshal(created.Body.Bytes(), &doc); err != nil || doc.DocumentID == "" {
+		t.Fatalf("could not create a document: %d %s", created.Code, created.Body.String())
+	}
+	// SubmitText also queued a document.uploaded event; remove it so it is never published.
+	t.Cleanup(func() {
+		pool.Exec(context.Background(),
+			`DELETE FROM outbox WHERE convert_from(body, 'UTF8')::jsonb -> 'payload' ->> 'documentId' = $1`, doc.DocumentID)
+	})
+
+	rec := getContent(h, doc.DocumentID)
+	if rec.Code != 200 {
+		t.Fatalf("got %d (%s), want 200", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Source string
+		Text   string
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Source != "text" || got.Text != "hello world" {
+		t.Fatalf("got %+v, want source text and text %q", got, "hello world")
+	}
+}
+
+func TestGetContentNotFound(t *testing.T) {
+	h, _ := newTestHandler(t)
+	for _, id := range []string{
+		"00000000-0000-4000-8000-000000000000", // valid uuid, but no such document
+		"not-a-uuid",
+		"",
+	} {
+		if rec := getContent(h, id); rec.Code != 404 {
+			t.Errorf("id %q: got %d (%s), want 404", id, rec.Code, rec.Body.String())
+		}
 	}
 }

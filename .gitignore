@@ -15,6 +15,7 @@ firmware/test/test_protocol
 # Secrets and local settings
 .env
 .env.*
+!.env.example
 
 # Logs
 *.log

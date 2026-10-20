@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"uuid"
 
 	"BrailleBar/platform"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,6 +22,30 @@ type Handler struct {
 
 type submitTextRequest struct {
 	Text string `json:"text"`
+}
+
+func (h *Handler) GetContent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := uuid.Parse(id); err != nil {
+		http.Error(w, "id is not an uuid", http.StatusNotFound)
+		return
+	}
+	var source string
+	var text *string
+	err := h.Pool.QueryRow(r.Context(),
+		`SELECT source, text FROM document WHERE id = $1`, id,
+	).Scan(&source, &text)
+	if errors.Is(err, pgx.ErrNoRows) {
+		http.Error(w, "document not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		serverError(w, "select document", err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"source": source, "text": text})
 }
 
 // SubmitText stores typed text and announces it with document.uploaded.

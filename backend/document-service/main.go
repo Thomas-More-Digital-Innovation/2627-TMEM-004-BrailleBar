@@ -56,6 +56,7 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("POST /documents/text", (&Handler{Pool: pool}).SubmitText)
+	mux.HandleFunc("GET /documents/{id}/content", (&Handler{Pool: pool}).GetContent)
 
 	port := os.Getenv("PORT")
 	if port == "" {
