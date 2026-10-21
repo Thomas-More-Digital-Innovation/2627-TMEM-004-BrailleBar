@@ -50,10 +50,11 @@ services:
       context: ./backend
       dockerfile: gateway/Dockerfile
     ports:
-      - "127.0.0.1:8080:8080" # the only service the apps talk to
+      - "8080:8080" # the only service the apps talk to
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/braillebar?search_path=gateway
+      DOCUMENT_SERVICE_URL: http://document-service:8080
 
   document-service:
     <<: *service

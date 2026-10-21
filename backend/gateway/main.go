@@ -1,25 +1,70 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 func main() {
-	mux := http.NewServeMux()
-	// Docker and Railway use this to restart a crashed container.
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
-	})
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	docURL, err := url.Parse(os.Getenv("DOCUMENT_SERVICE_URL"))
+	if err != nil || docURL.Host == "" {
+		slog.Error("config", "error", "DOCUMENT_SERVICE_URL is not a valid url")
+		os.Exit(1)
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
+	srv := &http.Server{Addr: ":" + port, Handler: routes(docURL), ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
+	}()
+
 	slog.Info("listening", "service", "gateway", "port", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// routes forwards only the listed public routes; everything else (like /documents/{id}/content) is a 404.
+func routes(docURL *url.URL) http.Handler {
+	docs := httputil.NewSingleHostReverseProxy(docURL)
+
+	mux := http.NewServeMux()
+	// Docker and Railway use this to restart a crashed container.
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+	mux.Handle("POST /documents/text", requireDevice(docs))
+	return mux
+}
+
+// requireDevice stops requests without a device id before they reach a service.
+func requireDevice(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Device-Id")
+		if id == "" || len(id) > 64 {
+			http.Error(w, "missing or invalid X-Device-Id header", http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
