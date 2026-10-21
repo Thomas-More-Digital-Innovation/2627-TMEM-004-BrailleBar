@@ -19,17 +19,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	docURL, err := url.Parse(os.Getenv("DOCUMENT_SERVICE_URL"))
-	if err != nil || docURL.Host == "" {
-		slog.Error("config", "error", "DOCUMENT_SERVICE_URL is not a valid url")
-		os.Exit(1)
-	}
+	docURL := serviceURL("DOCUMENT_SERVICE_URL")
+	jobURL := serviceURL("PRINT_JOB_SERVICE_URL")
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	srv := &http.Server{Addr: ":" + port, Handler: routes(docURL), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: ":" + port, Handler: routes(docURL, jobURL), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -45,8 +42,9 @@ func main() {
 }
 
 // routes forwards only the listed public routes; everything else (like /documents/{id}/content) is a 404.
-func routes(docURL *url.URL) http.Handler {
+func routes(docURL, jobURL *url.URL) http.Handler {
 	docs := httputil.NewSingleHostReverseProxy(docURL)
+	jobs := httputil.NewSingleHostReverseProxy(jobURL)
 
 	mux := http.NewServeMux()
 	// Docker and Railway use this to restart a crashed container.
@@ -54,7 +52,19 @@ func routes(docURL *url.URL) http.Handler {
 		w.Write([]byte("ok"))
 	})
 	mux.Handle("POST /documents/text", requireDevice(docs))
+	mux.Handle("GET /jobs/{id}", requireDevice(jobs))
+	mux.Handle("GET /jobs/{id}/pages", requireDevice(jobs))
+	mux.Handle("POST /jobs/{id}/status", requireDevice(jobs))
 	return mux
+}
+
+func serviceURL(key string) *url.URL {
+	u, err := url.Parse(os.Getenv(key))
+	if err != nil || u.Host == "" {
+		slog.Error("config", "error", key+" is not a valid url")
+		os.Exit(1)
+	}
+	return u
 }
 
 // requireDevice stops requests without a device id before they reach a service.
