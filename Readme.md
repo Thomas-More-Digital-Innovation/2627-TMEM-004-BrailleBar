@@ -1,5 +1,5 @@
 # WELCOME TO BRAILLEBAR
-## This project will have a Webapp built in tauri and a mobile app in react native
+## This project will have one Flutter app for desktop and mobile
 BrailleBar is a braille printer that let's blind and visually impaired people print any text or document in braille, from their computer or phone.
 
 The printer is built separately from this project, I mainly supply the software and code for the printer itself.
@@ -78,10 +78,10 @@ The apps only talk to the API gateway and get live updates from the Notification
 ## Components, tech stack
 Client
 
-- Desktop app - UI for typing, files, queueing and status - Tauri
-- Mobile app - Same UI plus camera scan and share menu - React Native, Expo, Typescript
-- Shared stuff - API client, event types, UI logic used by both apps (the backend is Go, so it does not use this) - Typescript
-- Device agent - BLE connection, chunking, retries - Rust (Desktop), Typescript (Mobile)
+- App - One codebase for desktop and mobile: typing, files, queueing and status, plus camera scan and share menu on mobile - Flutter, Dart
+- Device agent - BLE connection, chunking, retries, written once for every platform - Dart, flutter_blue_plus
+
+One Flutter app instead of a separate desktop and mobile app means the UI, the device agent and the BLE code are only written once. BLE on Windows is the least mature platform, so it is tested with the printer first.
 - On-Device scan helper - Page edge detection, OCR - Undecided
 
 Backend Services
@@ -95,7 +95,7 @@ Backend Services
 
 The backend services are written in Go. The OCR Service stays in Python because the OCR engines live there.
 
-Because the backend is Go and the apps are TypeScript, the event types cannot be shared as code. The events are described once in a language neutral schema, and both sides are tested against it.
+Because the backend is Go and the app is Dart, the event types cannot be shared as code. The events are described once in a language neutral schema, and both sides are tested against it.
 
 Infra
 
@@ -174,7 +174,7 @@ Device agent -> BLE -> ESP32 -> printing mechanism
 ### Maintainability
 - Each service can be changed and deployed on it's own
 - The OCR engine can be swapped without touching the other services
-- The BLE protocol is written down with test cases both agents must pass
+- The BLE protocol is written down with test cases the agent and the printer must pass
 
 ## Deployment
 Local - Docker compose on my laptop
@@ -188,6 +188,6 @@ Prod - VPS, Kubernetes when there are many more printers
 - Daily database backup
 
 ### Apps
-- Desktop: Tauri installers for Windows, MacOS, Linux
-- Mobile: EXPO EAS builds for Android and IOS
+- Desktop: Flutter builds for Windows, MacOS, Linux
+- Mobile: Flutter builds for Android and IOS
 - The apps get the backend URL from config
