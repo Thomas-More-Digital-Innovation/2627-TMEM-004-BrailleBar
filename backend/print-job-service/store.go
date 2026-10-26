@@ -14,12 +14,17 @@ const printJobTable = `CREATE TABLE IF NOT EXISTS print_job (
 	state       text NOT NULL DEFAULT 'queued',
 	page        int  NOT NULL DEFAULT 0,
 	page_count  int  NOT NULL,
+	reason      text NOT NULL DEFAULT '',
 	pages       jsonb NOT NULL,
 	created_at  timestamptz NOT NULL DEFAULT now(),
 	updated_at  timestamptz NOT NULL DEFAULT now()
 )`
 
 func migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, printJobTable)
+	if _, err := pool.Exec(ctx, printJobTable); err != nil {
+		return err
+	}
+	// tables made before reason existed don't get it from CREATE TABLE IF NOT EXISTS
+	_, err := pool.Exec(ctx, `ALTER TABLE print_job ADD COLUMN IF NOT EXISTS reason text NOT NULL DEFAULT ''`)
 	return err
 }

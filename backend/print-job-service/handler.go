@@ -42,7 +42,8 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"jobId": id, "documentId": documentID, "state": state, "page": page, "pageCount": pageCount,
+		"jobId": id, "documentId": documentID, "deviceId": r.Header.Get("X-Device-Id"),
+		"state": state, "page": page, "pageCount": pageCount,
 	})
 }
 

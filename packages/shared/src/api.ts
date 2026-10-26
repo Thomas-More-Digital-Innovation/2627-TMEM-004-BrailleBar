@@ -1,12 +1,13 @@
-import type { PrintJobStatus } from './events';
+import type { PrintJobState, PrintJobStatus } from './events';
 
-// The REST contract the API gateway has to implement (not built yet, so this file is the draft of it):
-//   POST /documents/text {text}        -> {documentId}
-//   POST /documents (multipart "file") -> {documentId}
-//   GET  /jobs/:jobId                  -> PrintJobStatus
-//   POST /jobs/:jobId/cancel           -> PrintJobStatus
-//   WS   /status?deviceId=...          -> stream of PrintJobStatus (JSON)
+// The REST contract of the API gateway (backend/gateway):
+//   POST /documents/text {text}             -> {documentId}
+//   GET  /jobs/:jobId                       -> PrintJobStatus
+//   GET  /jobs/:jobId/pages                 -> {jobId, pages}, the lines the agent sends to the printer
+//   POST /jobs/:jobId/status {state, page}  -> 204; a job only moves forward, else 409
+//   WS   /status?deviceId=...               -> stream of PrintJobStatus (JSON), starting with "queued"
 // Every request carries the anonymous device id in X-Device-Id; there are no accounts.
+// File uploads come with the OCR service. Cancelling is reportStatus(jobId, 'cancelled', page).
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -29,6 +30,7 @@ export function createApiClient({ baseUrl, deviceId, fetch: f }: ApiOptions) {
       headers: { ...init.headers, 'X-Device-Id': deviceId },
     });
     if (!res.ok) throw new ApiError(res.status, await res.text());
+    if (res.status === 204) return undefined as T;
     return res.json() as Promise<T>;
   }
 
@@ -40,17 +42,18 @@ export function createApiClient({ baseUrl, deviceId, fetch: f }: ApiOptions) {
         body: JSON.stringify({ text }),
       }),
 
-    // React Native passes {uri, name, type} instead of a Blob; its FormData accepts that, hence the cast.
-    uploadFile: (file: Blob, name: string) => {
-      const form = new FormData();
-      form.append('file', file as Blob, name);
-      return call<{ documentId: string }>('/documents', { method: 'POST', body: form });
-    },
-
     getJob: (jobId: string) => call<PrintJobStatus>(`/jobs/${encodeURIComponent(jobId)}`),
 
-    cancelJob: (jobId: string) =>
-      call<PrintJobStatus>(`/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }),
+    getPages: (jobId: string) =>
+      call<{ jobId: string; pages: string[][] }>(`/jobs/${encodeURIComponent(jobId)}/pages`),
+
+    // page is 1-based; a retry of the same report is fine, going back is a 409 ApiError.
+    reportStatus: (jobId: string, state: Exclude<PrintJobState, 'queued'>, page: number, reason?: string) =>
+      call<void>(`/jobs/${encodeURIComponent(jobId)}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state, page, reason }),
+      }),
 
     // ponytail: no auto-reconnect; when the socket closes `onClose` fires and the app must call watchStatus again.
     watchStatus(onStatus: (s: PrintJobStatus) => void, onClose?: () => void): () => void {

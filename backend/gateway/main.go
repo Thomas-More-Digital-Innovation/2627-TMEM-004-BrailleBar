@@ -21,12 +21,13 @@ func main() {
 
 	docURL := serviceURL("DOCUMENT_SERVICE_URL")
 	jobURL := serviceURL("PRINT_JOB_SERVICE_URL")
+	statusURL := serviceURL("NOTIFICATION_SERVICE_URL")
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	srv := &http.Server{Addr: ":" + port, Handler: routes(docURL, jobURL), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: ":" + port, Handler: routes(docURL, jobURL, statusURL), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -42,9 +43,10 @@ func main() {
 }
 
 // routes forwards only the listed public routes; everything else (like /documents/{id}/content) is a 404.
-func routes(docURL, jobURL *url.URL) http.Handler {
+func routes(docURL, jobURL, statusURL *url.URL) http.Handler {
 	docs := httputil.NewSingleHostReverseProxy(docURL)
 	jobs := httputil.NewSingleHostReverseProxy(jobURL)
+	status := httputil.NewSingleHostReverseProxy(statusURL) // also proxies the websocket upgrade
 
 	mux := http.NewServeMux()
 	// Docker and Railway use this to restart a crashed container.
@@ -55,6 +57,11 @@ func routes(docURL, jobURL *url.URL) http.Handler {
 	mux.Handle("GET /jobs/{id}", requireDevice(jobs))
 	mux.Handle("GET /jobs/{id}/pages", requireDevice(jobs))
 	mux.Handle("POST /jobs/{id}/status", requireDevice(jobs))
+	// Browsers can't set headers on a websocket, so the app sends ?deviceId= and we move it to the header.
+	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Device-Id", r.URL.Query().Get("deviceId"))
+		requireDevice(status).ServeHTTP(w, r)
+	})
 	return mux
 }
 
