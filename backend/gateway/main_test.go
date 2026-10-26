@@ -18,7 +18,7 @@ func TestRoutes(t *testing.T) {
 	}))
 	defer fake.Close()
 	fakeURL, _ := url.Parse(fake.URL)
-	gw := httptest.NewServer(routes(fakeURL, fakeURL))
+	gw := httptest.NewServer(routes(fakeURL, fakeURL, fakeURL))
 	defer gw.Close()
 
 	cases := []struct {
@@ -31,6 +31,9 @@ func TestRoutes(t *testing.T) {
 		{"job is forwarded", "GET", "/jobs/job-1", "dev-1", http.StatusCreated},
 		{"pages are forwarded", "GET", "/jobs/job-1/pages", "dev-1", http.StatusCreated},
 		{"status is forwarded", "POST", "/jobs/job-1/status", "dev-1", http.StatusCreated},
+		{"status socket is forwarded", "GET", "/status?deviceId=dev-1", "", http.StatusCreated},
+		{"status socket without device id", "GET", "/status", "", http.StatusBadRequest},
+		{"status header is overwritten by the query", "GET", "/status", "dev-1", http.StatusBadRequest},
 		{"job without device id", "GET", "/jobs/job-1", "", http.StatusBadRequest},
 		{"internal content endpoint hidden", "GET", "/documents/11111111-1111-4111-8111-111111111111/content", "dev-1", http.StatusNotFound},
 	}
@@ -50,7 +53,7 @@ func TestRoutes(t *testing.T) {
 			}
 		})
 	}
-	if want := []string{"POST /documents/text", "GET /jobs/job-1", "GET /jobs/job-1/pages", "POST /jobs/job-1/status"}; !reflect.DeepEqual(reached, want) {
+	if want := []string{"POST /documents/text", "GET /jobs/job-1", "GET /jobs/job-1/pages", "POST /jobs/job-1/status", "GET /status"}; !reflect.DeepEqual(reached, want) {
 		t.Fatalf("services got %v, want %v", reached, want)
 	}
 }

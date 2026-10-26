@@ -191,7 +191,7 @@ func TestReportStatus(t *testing.T) {
 		{"earlier state on the same page", "dev-test", `{"state":"sending","page":1}`, http.StatusConflict},
 		{"earlier page", "dev-test", `{"state":"printing","page":0}`, http.StatusConflict},
 		{"next page starts with sending", "dev-test", `{"state":"sending","page":2}`, http.StatusNoContent},
-		{"done", "dev-test", `{"state":"done","page":2}`, http.StatusNoContent},
+		{"failed", "dev-test", `{"state":"failed","page":2,"reason":"paper jam"}`, http.StatusNoContent},
 		{"finished job is final", "dev-test", `{"state":"printing","page":1}`, http.StatusConflict},
 	}
 	for _, c := range cases {
@@ -200,11 +200,11 @@ func TestReportStatus(t *testing.T) {
 		}
 	}
 
-	var state string
-	var page int
-	pool.QueryRow(ctx, `SELECT state, page FROM print_job WHERE id = $1`, jobID).Scan(&state, &page)
-	if state != "done" || page != 2 {
-		t.Fatalf("job is %s on page %d, want done on page 2", state, page)
+	rec := call(h.GetJob, "GET", "dev-test", "")
+	var job map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &job)
+	if job["state"] != "failed" || job["page"] != float64(2) || job["reason"] != "paper jam" {
+		t.Fatalf("job is %v, want failed on page 2 with reason paper jam", job)
 	}
 	var states []string
 	r, err := pool.Query(ctx, `SELECT convert_from(body, 'UTF8')::jsonb -> 'payload' ->> 'state' FROM outbox
@@ -218,7 +218,7 @@ func TestReportStatus(t *testing.T) {
 		r.Scan(&s)
 		states = append(states, s)
 	}
-	if !reflect.DeepEqual(states, []string{"printing", "printing", "sending", "done"}) {
-		t.Fatalf("print.job.status events %v, want [printing printing sending done]", states)
+	if !reflect.DeepEqual(states, []string{"printing", "printing", "sending", "failed"}) {
+		t.Fatalf("print.job.status events %v, want [printing printing sending failed]", states)
 	}
 }

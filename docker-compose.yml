@@ -56,6 +56,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/braillebar?search_path=gateway
       DOCUMENT_SERVICE_URL: http://document-service:8080
       PRINT_JOB_SERVICE_URL: http://print-job-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
 
   document-service:
     <<: *service

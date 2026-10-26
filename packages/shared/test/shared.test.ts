@@ -65,6 +65,20 @@ describe('api client', () => {
     expect((seen?.init?.headers as Record<string, string>)['X-Device-Id']).toBe('dev1');
   });
 
+  it('reports status and accepts the empty 204', async () => {
+    let seen: { url: string; init?: RequestInit } | undefined;
+    const api = createApiClient({
+      baseUrl: 'http://x', deviceId: 'dev1',
+      fetch: (async (url: string, init?: RequestInit) => {
+        seen = { url, init };
+        return new Response(null, { status: 204 });
+      }) as unknown as typeof fetch,
+    });
+    expect(await api.reportStatus('j1', 'printing', 1)).toBeUndefined();
+    expect(seen?.url).toBe('http://x/jobs/j1/status');
+    expect(JSON.parse(String(seen?.init?.body))).toEqual({ state: 'printing', page: 1 });
+  });
+
   it('throws ApiError on a failed request', async () => {
     const api = createApiClient({
       baseUrl: 'http://x', deviceId: 'dev1',
