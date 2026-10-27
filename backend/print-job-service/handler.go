@@ -25,12 +25,12 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job not found", http.StatusNotFound)
 		return
 	}
-	var documentID, state string
+	var documentID, state, reason string
 	var page, pageCount int
 	err := h.Pool.QueryRow(r.Context(),
-		`SELECT document_id::text, state, page, page_count FROM print_job WHERE id = $1 AND device_id = $2`,
+		`SELECT document_id::text, state, page, page_count, reason FROM print_job WHERE id = $1 AND device_id = $2`,
 		id, r.Header.Get("X-Device-Id"),
-	).Scan(&documentID, &state, &page, &pageCount)
+	).Scan(&documentID, &state, &page, &pageCount, &reason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.Error(w, "job not found", http.StatusNotFound)
 		return
@@ -43,7 +43,7 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"jobId": id, "documentId": documentID, "deviceId": r.Header.Get("X-Device-Id"),
-		"state": state, "page": page, "pageCount": pageCount,
+		"state": state, "page": page, "pageCount": pageCount, "reason": reason,
 	})
 }
 
@@ -137,7 +137,7 @@ func (h *Handler) ReportStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := tx.Exec(ctx,
-		`UPDATE print_job SET state = $2, page = $3, updated_at = now() WHERE id = $1`, id, req.State, req.Page,
+		`UPDATE print_job SET state = $2, page = $3, reason = $4, updated_at = now() WHERE id = $1`, id, req.State, req.Page, req.Reason,
 	); err != nil {
 		serverError(w, "update job", err)
 		return

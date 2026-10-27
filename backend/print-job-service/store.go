@@ -24,7 +24,5 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, printJobTable); err != nil {
 		return err
 	}
-	// tables made before reason existed don't get it from CREATE TABLE IF NOT EXISTS
-	_, err := pool.Exec(ctx, `ALTER TABLE print_job ADD COLUMN IF NOT EXISTS reason text NOT NULL DEFAULT ''`)
-	return err
+	return nil
 }
