@@ -68,11 +68,31 @@ class Api {
   Future<void> reportStatus(String jobId, String state, int page, [String reason = '']) =>
       _call('POST', '${_job(jobId)}/status', {'state': state, 'page': page, 'reason': reason});
 
-  // ponytail: no auto-reconnect; when the stream ends, call watchStatus again and re-read open jobs with getJob.
-  Stream<JobStatus> watchStatus() {
+  /// Live statuses of this device's jobs. Never ends: a lost connection is retried after 1s, 2s, 4s ... up to 30s.
+  /// onConnection reports every connect and disconnect. Statuses sent while disconnected are lost, so re-read
+  /// open jobs with getJob after a reconnect.
+  Stream<JobStatus> watchStatus({void Function(bool connected)? onConnection, Duration retry = const Duration(seconds: 1)}) async* {
     final uri = Uri.parse('${baseUrl.replaceFirst('http', 'ws')}/status')
         .replace(queryParameters: {'deviceId': deviceId});
-    return WebSocketChannel.connect(uri).stream.map((m) => JobStatus.fromJson(jsonDecode(m as String)));
+    var delay = retry;
+    while (true) {
+      final channel = WebSocketChannel.connect(uri);
+      try {
+        await channel.ready;
+        onConnection?.call(true);
+        delay = retry;
+        await for (final m in channel.stream) {
+          yield JobStatus.fromJson(jsonDecode(m as String));
+        }
+      } catch (_) {
+        // unreachable server or a broken message: both mean reconnect
+      } finally {
+        channel.sink.close(); // also runs when the listener cancels, so no socket is left open
+      }
+      onConnection?.call(false);
+      await Future.delayed(delay);
+      delay = delay * 2 > const Duration(seconds: 30) ? const Duration(seconds: 30) : delay * 2;
+    }
   }
 }
 
