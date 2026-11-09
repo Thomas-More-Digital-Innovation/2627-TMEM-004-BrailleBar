@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:braillebar/agent.dart';
 import 'package:braillebar/api.dart';
 import 'package:braillebar/main.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 Map<String, dynamic> statusJson(String documentId, String state, int page) =>
-    {'jobId': 'j1', 'documentId': documentId, 'state': state, 'page': page, 'pageCount': 1};
+    {'jobId': 'j1', 'documentId': documentId, 'state': state, 'page': page, 'pageCount': 3};
 
 JobStatus status(String documentId, String state, int page) => JobStatus.fromJson(statusJson(documentId, state, page));
 
@@ -19,6 +20,8 @@ Api fakeApi({String jobState = 'printing'}) => Api('http://x', 'dev1', client: M
       return http.Response(jsonEncode({'documentId': 'd1'}), 201);
     }));
 
+FakePrinter connectedPrinter() => FakePrinter()..connected.value = true;
+
 Future<void> typeAndPrint(WidgetTester tester) async {
   await tester.enterText(find.byType(TextField), 'hello');
   await tester.pump(); // the button enables on the next frame
@@ -27,9 +30,9 @@ Future<void> typeAndPrint(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('prints text and shows only its own status', (tester) async {
+  testWidgets('prints text and says each step', (tester) async {
     final statuses = StreamController<JobStatus>();
-    await tester.pumpWidget(MaterialApp(home: PrintScreen(api: fakeApi(), watch: (_) => statuses.stream)));
+    await tester.pumpWidget(MaterialApp(home: PrintScreen(api: fakeApi(), link: connectedPrinter(), watch: (_) => statuses.stream)));
 
     FilledButton button() => tester.widget<FilledButton>(find.byType(FilledButton));
     expect(button().onPressed, isNull, reason: 'nothing to print yet');
@@ -37,19 +40,40 @@ void main() {
     // the queued status arrives before submitText has returned the document id
     statuses.add(status('d1', 'queued', 0));
     await typeAndPrint(tester);
-    expect(find.text('Print queued'), findsOneWidget);
+    expect(find.text('Printing'), findsOneWidget);
 
-    statuses.add(status('other-doc', 'done', 1));
-    statuses.add(status('d1', 'printing', 1));
+    statuses.add(status('d1', 'sending', 2));
     await tester.pumpAndSettle();
-    expect(find.text('Printing page 1 of 1'), findsOneWidget);
+    expect(find.text('Printing'), findsOneWidget, reason: 'sending is not announced');
+
+    statuses.add(status('d1', 'printing', 2));
+    await tester.pumpAndSettle();
+    expect(find.text('Page 2 of 3'), findsOneWidget);
+
+    statuses.add(status('d1', 'done', 3));
+    await tester.pumpAndSettle();
+    expect(find.text('Finished, you can take your paper'), findsOneWidget);
   });
 
-  testWidgets('a lost connection is shown once and the job is re-read after reconnecting', (tester) async {
+  testWidgets('text sent earlier is announced as such', (tester) async {
+    final statuses = StreamController<JobStatus>();
+    await tester.pumpWidget(MaterialApp(home: PrintScreen(api: fakeApi(), link: connectedPrinter(), watch: (_) => statuses.stream)));
+    statuses.add(status('old', 'printing', 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Printing your earlier text'), findsOneWidget);
+  });
+
+  testWidgets('says the text waits when there is no printer', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: PrintScreen(api: fakeApi(), link: FakePrinter(), watch: (_) => const Stream.empty())));
+    await typeAndPrint(tester);
+    expect(find.text("The printer is off or too far away. Your text will print when it's found"), findsOneWidget);
+  });
+
+  testWidgets('a server reconnect is silent but the text is re-read', (tester) async {
     final statuses = StreamController<JobStatus>();
     late void Function(bool) connection;
     await tester.pumpWidget(MaterialApp(
-      home: PrintScreen(api: fakeApi(jobState: 'done'), watch: (onConnection) {
+      home: PrintScreen(api: fakeApi(jobState: 'done'), link: connectedPrinter(), watch: (onConnection) {
         connection = onConnection;
         return statuses.stream;
       }),
@@ -60,18 +84,18 @@ void main() {
 
     connection(false);
     await tester.pumpAndSettle();
-    expect(find.text('Connection to the server lost, reconnecting'), findsOneWidget);
+    expect(find.text('Printing'), findsOneWidget);
 
-    // while offline the job finished; the screen learns it from GET /jobs/j1
+    // while offline the text finished; the screen learns it from GET /jobs/j1
     connection(true);
     await tester.pumpAndSettle();
-    expect(find.text('Print finished'), findsOneWidget);
+    expect(find.text('Finished, you can take your paper'), findsOneWidget);
   });
 
-  testWidgets('a server error is shown', (tester) async {
+  testWidgets('a server error says the text was not sent', (tester) async {
     final api = Api('http://x', 'dev1', client: MockClient((req) async => http.Response('bad', 400)));
-    await tester.pumpWidget(MaterialApp(home: PrintScreen(api: api, watch: (_) => const Stream.empty())));
+    await tester.pumpWidget(MaterialApp(home: PrintScreen(api: api, link: connectedPrinter(), watch: (_) => const Stream.empty())));
     await typeAndPrint(tester);
-    expect(find.text('Could not send the text, error 400'), findsOneWidget);
+    expect(find.text('Your text was not sent, please try again'), findsOneWidget);
   });
 }

@@ -54,6 +54,7 @@ func routes(docURL, jobURL, statusURL *url.URL) http.Handler {
 		w.Write([]byte("ok"))
 	})
 	mux.Handle("POST /documents/text", requireDevice(docs))
+	mux.Handle("GET /jobs", requireDevice(jobs))
 	mux.Handle("GET /jobs/{id}", requireDevice(jobs))
 	mux.Handle("GET /jobs/{id}/pages", requireDevice(jobs))
 	mux.Handle("POST /jobs/{id}/status", requireDevice(jobs))

@@ -47,6 +47,38 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// OpenJobs lists this device's unfinished jobs, oldest first, so an agent that was offline can pick them up.
+func (h *Handler) OpenJobs(w http.ResponseWriter, r *http.Request) {
+	device := r.Header.Get("X-Device-Id")
+	rows, err := h.Pool.Query(r.Context(),
+		`SELECT id::text, document_id::text, state, page, page_count, reason FROM print_job
+		 WHERE device_id = $1 AND state NOT IN ('done', 'failed', 'cancelled') ORDER BY created_at`, device)
+	if err != nil {
+		serverError(w, "list jobs", err)
+		return
+	}
+	defer rows.Close()
+	jobs := []map[string]any{}
+	for rows.Next() {
+		var id, documentID, state, reason string
+		var page, pageCount int
+		if err := rows.Scan(&id, &documentID, &state, &page, &pageCount, &reason); err != nil {
+			serverError(w, "scan job", err)
+			return
+		}
+		jobs = append(jobs, map[string]any{
+			"jobId": id, "documentId": documentID, "deviceId": device,
+			"state": state, "page": page, "pageCount": pageCount, "reason": reason,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		serverError(w, "list jobs", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"jobs": jobs})
+}
+
 // GetPages gives the agent the laid-out pages to send to the printer.
 func (h *Handler) GetPages(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

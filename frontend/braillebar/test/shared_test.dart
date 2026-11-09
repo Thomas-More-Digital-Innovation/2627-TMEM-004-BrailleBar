@@ -79,8 +79,9 @@ void main() {
   test('describeStatus', () {
     JobStatus s(String state, [String reason = '']) => JobStatus.fromJson(
         {'jobId': 'j', 'documentId': 'd', 'state': state, 'page': 2, 'pageCount': 3, 'reason': reason});
-    expect(describeStatus(s('printing')), 'Printing page 2 of 3');
-    expect(describeStatus(s('failed', 'paper jam')), 'Print stopped: paper jam');
-    expect(describeStatus(s('failed')), 'Print stopped: unknown reason');
+    expect(describeStatus(s('printing')), 'Page 2 of 3');
+    expect(describeStatus(s('failed', 'paper jam')), 'paper jam');
+    expect(describeStatus(s('failed')), 'Something went wrong, your text was not printed');
+    expect(describeStatus(s('sending')), isNull, reason: 'not worth interrupting for');
   });
 }

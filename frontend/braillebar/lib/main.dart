@@ -1,7 +1,10 @@
 import 'dart:async';
 
+import 'package:braillebar/agent.dart';
 import 'package:braillebar/api.dart';
+import 'package:braillebar/ble_link.dart';
 import 'package:braillebar/layout.dart';
+import 'package:braillebar/printer_screen.dart';
 import 'package:braillebar/status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -10,12 +13,19 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final deviceId = await loadDeviceId();
   final myapi = Api(const String.fromEnvironment('API_URL', defaultValue: 'http://localhost:8080'), deviceId);
-  runApp(MyApp(api: myapi));
+  final PrinterLink link = const bool.fromEnvironment('FAKE_PRINTER') ? FakePrinter() : BlePrinterLink();
+  final agent = Agent(myapi, link);
+  myapi.watchStatus(onConnection: (up) {
+    if (up) agent.resumeOpen();
+  }).listen(agent.handle);
+  agent.findPrinter();
+  runApp(MyApp(api: myapi, link: link));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key, required this.api});
+  const MyApp({super.key, required this.api, required this.link});
   final Api api;
+  final PrinterLink link;
 
   @override
   Widget build(BuildContext context) {
@@ -24,14 +34,47 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: .fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: PrintScreen(api: api),
+      home: Home(api: api, link: link),
+    );
+  }
+}
+
+class Home extends StatefulWidget {
+  const Home({super.key, required this.api, required this.link});
+  final Api api;
+  final PrinterLink link;
+
+  @override
+  State<Home> createState() => _HomeState();
+}
+
+class _HomeState extends State<Home> {
+  int _tab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      // IndexedStack keeps both screens alive, so announcements are made on either tab
+      body: IndexedStack(index: _tab, children: [
+        PrintScreen(api: widget.api, link: widget.link),
+        PrinterScreen(link: widget.link),
+      ]),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.edit), label: 'Type and print'),
+          NavigationDestination(icon: Icon(Icons.print), label: 'Printer'),
+        ],
+      ),
     );
   }
 }
 
 class PrintScreen extends StatefulWidget {
-  const PrintScreen({super.key, required this.api, this.watch});
+  const PrintScreen({super.key, required this.api, required this.link, this.watch});
   final Api api;
+  final PrinterLink link;
   // tests pass fake statuses and connection changes; the app uses api.watchStatus
   final Stream<JobStatus> Function(void Function(bool connected) onConnection)? watch;
 
@@ -42,7 +85,7 @@ class PrintScreen extends StatefulWidget {
 class _PrintScreenState extends State<PrintScreen> {
   final _text = TextEditingController();
   late final StreamSubscription<JobStatus> _sub;
-  // by documentId: the queued status can arrive before submitText has returned the id
+  // by documentId: a status can arrive before submitText has returned the id
   final _statuses = <String, JobStatus>{};
   String? _documentId;
   String _message = '';
@@ -53,44 +96,54 @@ class _PrintScreenState extends State<PrintScreen> {
   void initState() {
     super.initState();
     _text.addListener(() => setState(() {})); // enables the button as soon as there is text
+    widget.link.connected.addListener(_onPrinter);
     final watch = widget.watch ?? (onConnection) => widget.api.watchStatus(onConnection: onConnection);
     _sub = watch(_onConnection).listen(_onStatus);
   }
 
-  void _onStatus(JobStatus s) {
-    _statuses[s.documentId] = s;
-    if (s.documentId == _documentId) _show(describeStatus(s));
+  void _onPrinter() {
+    _say(widget.link.connected.value ? 'Printer connected' : 'The printer is off or too far away');
   }
 
-  // Every failed retry reports false again, so only a change is announced.
+  void _onStatus(JobStatus s) {
+    _statuses[s.documentId] = s;
+    final own = s.documentId == _documentId;
+    if (!own && _sending) return; // probably our own text, submitText just hasn't answered yet
+    final sentence = !own && s.state == 'printing' && s.page == 1 ? 'Printing your earlier text' : describeStatus(s);
+    if (sentence != null) _show(sentence);
+  }
+
+  // Quiet on purpose: statuses sent while offline are lost, so only re-read the text being printed.
   Future<void> _onConnection(bool connected) async {
     final wasLost = _connected == false;
     if (connected == _connected) return;
     _connected = connected;
-    if (!connected) return _show('Connection to the server lost, reconnecting');
-    if (!wasLost) return; // the first connection is not news
-    // Statuses sent while offline are lost, so ask for the job itself.
     final last = _statuses[_documentId];
-    if (last == null) return _show('Reconnected');
+    if (!connected || !wasLost || last == null) return;
     try {
       _onStatus(await widget.api.getJob(last.jobId));
     } catch (_) {
-      _show('Reconnected');
+      // the next status or reconnect brings it
     }
   }
 
   @override
   void dispose() {
     _sub.cancel();
+    widget.link.connected.removeListener(_onPrinter);
     _text.dispose();
     super.dispose();
+  }
+
+  void _say(String message) {
+    if (mounted) SemanticsService.sendAnnouncement(View.of(context), message, TextDirection.ltr);
   }
 
   // Shows the message and has the screen reader say it.
   void _show(String message) {
     if (!mounted) return;
     setState(() => _message = message);
-    SemanticsService.sendAnnouncement(View.of(context), message, TextDirection.ltr);
+    _say(message);
   }
 
   Future<void> _print() async {
@@ -100,11 +153,14 @@ class _PrintScreenState extends State<PrintScreen> {
       _documentId = id;
       _text.clear();
       final s = _statuses[id];
-      _show(s != null ? describeStatus(s) : 'Sent, waiting for the print queue');
-    } on ApiError catch (e) {
-      _show('Could not send the text, error ${e.status}');
+      final sentence = s == null ? null : describeStatus(s);
+      _show(widget.link.connected.value
+          ? sentence ?? 'Printing'
+          : "The printer is off or too far away. Your text will print when it's found");
+    } on ApiError {
+      _show('Your text was not sent, please try again');
     } catch (_) {
-      _show('Could not reach the server');
+      _show('No internet connection, your text was not sent');
     } finally {
       if (mounted) setState(() => _sending = false);
     }

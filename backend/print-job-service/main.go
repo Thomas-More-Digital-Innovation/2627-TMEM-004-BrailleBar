@@ -60,6 +60,7 @@ func main() {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
+	mux.HandleFunc("GET /jobs", h.OpenJobs)
 	mux.HandleFunc("GET /jobs/{id}", h.GetJob)
 	mux.HandleFunc("GET /jobs/{id}/pages", h.GetPages)
 	mux.HandleFunc("POST /jobs/{id}/status", h.ReportStatus)
