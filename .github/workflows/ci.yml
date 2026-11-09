@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [platform, gateway, document-service, layout-service, print-job-service, notification-service]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: braillebar
+          POSTGRES_PASSWORD: braillebar
+          POSTGRES_DB: braillebar
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U braillebar" --health-interval 5s --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3-management
+        ports: ["5672:5672"]
+        options: --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/gateway/go.mod
+          cache-dependency-path: backend/*/go.sum
+      - name: Create the schemas
+        run: psql -f docker/postgres/init.sql postgres://braillebar:braillebar@localhost:5432/braillebar
+      - name: Test
+        working-directory: backend/${{ matrix.service }}
+        env:
+          RABBITMQ_URL: amqp://guest:guest@localhost:5672/
+          # the services' tests add their own search_path, the platform tests need one given
+          DATABASE_URL: postgres://braillebar:braillebar@localhost:5432/braillebar${{ matrix.service == 'platform' && '?search_path=document' || '' }}
+        run: go test -count=1 ./...
+
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/braillebar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.8
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the protocol parser
+        working-directory: firmware/test
+        run: g++ -std=c++11 test_protocol.cpp -o test_protocol && ./test_protocol
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Compile for the ESP32
+        run: |
+          arduino-cli core install esp32:esp32@3.3.12 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli compile --fqbn esp32:esp32:esp32 firmware

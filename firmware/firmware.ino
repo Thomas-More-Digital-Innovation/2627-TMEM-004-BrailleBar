@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <BLESerial.h>
+#include "BLESerial.h"
 #include "Protocol.h"
 
 // Code for the printer. Protocol: see Protocol.h
@@ -24,6 +24,8 @@
 // 8. Not in this version: paper_out detection (no sensor), punctuation, numbers, capitals, accents.
 //    Those characters print as an empty cell.
 // 9. After STATE|error (homing failed) the printer must be reset. A half-printed line is not retried.
+
+enum EmbossResult { EMBOSS_DONE, EMBOSS_CANCELLED, EMBOSS_FAILED }; // up here: Arduino puts its generated prototypes above the first function
 
 QueueHandle_t bleQueue; // bytes van de telefoon, verwerkt in readInput()
 
@@ -212,7 +214,6 @@ bool stepperInitialisatie() // gaat naar home-positie van x-as, false als de end
   return true;
 }
 
-enum EmbossResult { EMBOSS_DONE, EMBOSS_CANCELLED, EMBOSS_FAILED };
 
 // Print 1 regel: 3 puntenrijen, na elke rij doorvoer en opnieuw homen
 EmbossResult embossLine(const char* text)
