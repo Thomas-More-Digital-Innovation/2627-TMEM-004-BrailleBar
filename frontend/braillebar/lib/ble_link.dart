@@ -6,7 +6,7 @@ import 'package:braillebar/agent.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-// Values from firmware/BLESerial.h and BrailleMachine.cpp.
+// Values from firmware/BLESerial.h and firmware.ino.
 const printerName = 'BrailleMachine';
 final _service = Guid('FFE0');
 final _rxUuid = Guid('FFE1'); // app -> printer
