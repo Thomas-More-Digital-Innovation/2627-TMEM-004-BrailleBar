@@ -56,6 +56,10 @@ class Api {
 
   Future<JobStatus> getJob(String jobId) async => JobStatus.fromJson(await _call('GET', _job(jobId)));
 
+  /// This device's unfinished jobs, oldest first.
+  Future<List<JobStatus>> openJobs() async =>
+      [for (final j in (await _call('GET', '/jobs'))['jobs']) JobStatus.fromJson(j)];
+
   /// The laid-out lines per page, for the agent to send to the printer.
   Future<List<List<String>>> getPages(String jobId) async {
     final j = await _call('GET', '${_job(jobId)}/pages');

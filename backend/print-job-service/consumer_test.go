@@ -155,6 +155,30 @@ func jobFor(t *testing.T, pool *pgxpool.Pool, pages [][]string) (string, func(ht
 	return jobID, call
 }
 
+func TestOpenJobs(t *testing.T) {
+	pool := newTestPool(t)
+	jobID, call := jobFor(t, pool, [][]string{{"a"}})
+	h := &Handler{Pool: pool}
+	listed := func(device string) bool {
+		rec := call(h.OpenJobs, "GET", device, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("open jobs: %d %s", rec.Code, rec.Body)
+		}
+		return strings.Contains(rec.Body.String(), jobID)
+	}
+
+	if !listed("dev-test") {
+		t.Fatal("queued job is not listed")
+	}
+	if listed("dev-other") {
+		t.Fatal("job listed for another device")
+	}
+	call(h.ReportStatus, "POST", "dev-test", `{"state":"done","page":1}`)
+	if listed("dev-test") {
+		t.Fatal("finished job is still listed")
+	}
+}
+
 func TestGetPages(t *testing.T) {
 	pool := newTestPool(t)
 	pages := [][]string{{"hello", ""}, {"world"}}

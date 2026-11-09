@@ -28,6 +28,7 @@ func TestRoutes(t *testing.T) {
 		{"text is forwarded", "POST", "/documents/text", "dev-1", http.StatusCreated},
 		{"no device id", "POST", "/documents/text", "", http.StatusBadRequest},
 		{"device id too long", "POST", "/documents/text", strings.Repeat("x", 65), http.StatusBadRequest},
+		{"open jobs are forwarded", "GET", "/jobs", "dev-1", http.StatusCreated},
 		{"job is forwarded", "GET", "/jobs/job-1", "dev-1", http.StatusCreated},
 		{"pages are forwarded", "GET", "/jobs/job-1/pages", "dev-1", http.StatusCreated},
 		{"status is forwarded", "POST", "/jobs/job-1/status", "dev-1", http.StatusCreated},
@@ -53,7 +54,7 @@ func TestRoutes(t *testing.T) {
 			}
 		})
 	}
-	if want := []string{"POST /documents/text", "GET /jobs/job-1", "GET /jobs/job-1/pages", "POST /jobs/job-1/status", "GET /status"}; !reflect.DeepEqual(reached, want) {
+	if want := []string{"POST /documents/text", "GET /jobs", "GET /jobs/job-1", "GET /jobs/job-1/pages", "POST /jobs/job-1/status", "GET /status"}; !reflect.DeepEqual(reached, want) {
 		t.Fatalf("services got %v, want %v", reached, want)
 	}
 }
