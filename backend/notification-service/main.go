@@ -27,11 +27,9 @@ func main() {
 	defer broker.Close()
 
 	hub := NewHub()
-	// ponytail: one shared queue, so with 2+ replicas an event reaches only one of them and maybe not the one
-	// holding the device's socket. Scaling out needs a queue per replica (or Redis pub/sub) first.
+	// Every replica hears every event, because only one of them holds the device's socket.
 	go func() {
-		err := broker.Consume(ctx, "notification-service",
-			[]string{platform.PrintJobCreatedEvent, platform.PrintJobStatusEvent}, hub.Handle)
+		err := broker.Subscribe(ctx, []string{platform.PrintJobCreatedEvent, platform.PrintJobStatusEvent}, hub.Handle)
 		if ctx.Err() == nil {
 			fatal("consumer stopped", err)
 		}
