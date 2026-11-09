@@ -145,7 +145,32 @@ func (b *Broker) Consume(ctx context.Context, queue string, eventTypes []string,
 			return err
 		}
 	}
-	if err = ch.Qos(1, 0, false); err != nil {
+	return consume(ctx, ch, queue, h)
+}
+
+// Subscribe gives this instance its own temporary queue, so every replica gets every event; Consume shares one queue
+// and each event goes to one replica. For pushes only: events that arrive while the instance is down are not kept.
+func (b *Broker) Subscribe(ctx context.Context, eventTypes []string, h Handler) error {
+	ch, err := b.conn.Channel()
+	if err != nil {
+		return err
+	}
+	defer ch.Close()
+
+	q, err := ch.QueueDeclare("", false, true, true, false, nil)
+	if err != nil {
+		return err
+	}
+	for _, t := range eventTypes {
+		if err = ch.QueueBind(q.Name, t, Exchange, false, nil); err != nil {
+			return err
+		}
+	}
+	return consume(ctx, ch, q.Name, h)
+}
+
+func consume(ctx context.Context, ch *amqp.Channel, queue string, h Handler) error {
+	if err := ch.Qos(1, 0, false); err != nil {
 		return err
 	}
 	deliveries, err := ch.ConsumeWithContext(ctx, queue, "", false, false, false, false, nil)

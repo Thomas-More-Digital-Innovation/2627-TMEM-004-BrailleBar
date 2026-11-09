@@ -76,6 +76,41 @@ func TestProcessOnceRollsBackOnFailure(t *testing.T) {
 	}
 }
 
+func TestSubscribeReachesEveryInstance(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	b, err := Connect(ctx, needEnv(t, "RABBITMQ_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	event, _ := NewEnvelope(PrintJobCreatedEvent, PrintJobCreated{JobID: "j", Pages: [][]string{}})
+	got := make(chan string, 8)
+	for _, name := range []string{"a", "b"} {
+		go b.Subscribe(ctx, []string{PrintJobCreatedEvent}, func(_ context.Context, e Envelope) error {
+			if e.ID == event.ID { // other tests and running services can publish too
+				got <- name
+			}
+			return nil
+		})
+	}
+	time.Sleep(time.Second) // let the queues exist before publishing
+
+	if err := b.Publish(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for len(seen) < 2 {
+		select {
+		case n := <-got:
+			seen[n] = true
+		case <-time.After(5 * time.Second):
+			t.Fatalf("event reached only %v", seen)
+		}
+	}
+}
+
 func TestPublishConsumeAndDeadLetter(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
