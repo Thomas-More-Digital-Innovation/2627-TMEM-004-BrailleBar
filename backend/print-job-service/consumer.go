@@ -26,13 +26,17 @@ func (c *Consumer) Handle(ctx context.Context, e platform.Envelope) error {
 	if err != nil {
 		return err
 	}
+	sealedPages, err := platform.SealJSON(pagesJSON)
+	if err != nil {
+		return err
+	}
 
 	// ProcessOnce: a duplicate document.layout.completed does nothing; the job and the new event commit together.
 	var jobID string
 	processed, err := platform.ProcessOnce(ctx, c.Pool, e.ID, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx,
 			`INSERT INTO print_job (document_id, device_id, page_count, pages) VALUES ($1, $2, $3, $4) RETURNING id`,
-			p.DocumentID, p.DeviceID, len(p.Pages), string(pagesJSON),
+			p.DocumentID, p.DeviceID, len(p.Pages), sealedPages,
 		).Scan(&jobID); err != nil {
 			return err
 		}

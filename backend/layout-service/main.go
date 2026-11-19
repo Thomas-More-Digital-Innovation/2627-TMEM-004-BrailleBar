@@ -21,6 +21,10 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	defer platform.InitTracing(ctx, "layout-service")()
+	if err := platform.LoadEncryptionKey(); err != nil {
+		fatal("encryption key", err)
+	}
 
 	docURL := os.Getenv("DOCUMENT_SERVICE_URL")
 	if docURL == "" {
@@ -41,6 +45,13 @@ func main() {
 		fatal("print_text table migration failed", err)
 	}
 
+	go func() {
+		err := platform.RunRetention(ctx, pool, "print_text")
+		if ctx.Err() == nil {
+			fatal("retention stopped", err)
+		}
+	}()
+
 	broker, err := platform.Connect(ctx, os.Getenv("RABBITMQ_URL"))
 	if err != nil {
 		fatal("broker connection failed", err)
@@ -55,7 +66,7 @@ func main() {
 	}
 	// If either loop stops because the broker is lost, exit so Docker restarts us. A normal shutdown is not an error.
 	go func() {
-		err := broker.Consume(ctx, "layout-service", []string{platform.DocumentUploadedEvent}, consumer.Handle)
+		err := broker.Consume(ctx, "layout-service", []string{platform.DocumentUploadedEvent, platform.DocumentOcrCompletedEvent}, consumer.Handle)
 		if ctx.Err() == nil {
 			fatal("consumer stopped", err)
 		}

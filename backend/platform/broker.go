@@ -85,6 +85,7 @@ func (b *Broker) Done() <-chan struct{} { return b.done }
 // Publish sends e right away and returns once the broker confirmed it stored the message.
 // Services with a database should use Enqueue instead, so the event commits together with their own writes.
 func (b *Broker) Publish(ctx context.Context, e Envelope) error {
+	e.Traceparent = traceparent(ctx)
 	body, err := json.Marshal(e)
 	if err != nil {
 		return err
@@ -185,7 +186,10 @@ func consume(ctx context.Context, ch *amqp.Channel, queue string, h Handler) err
 			d.Nack(false, false)
 			continue
 		}
-		if err := runWithRetry(ctx, h, e); err != nil {
+		spanCtx, span := startConsumeSpan(ctx, e)
+		err := runWithRetry(spanCtx, h, e)
+		endSpan(span, err)
+		if err != nil {
 			slog.Error("event failed, dead-lettering", "queue", queue, "eventId", e.ID, "type", e.Type, "error", err)
 			d.Nack(false, false)
 			continue

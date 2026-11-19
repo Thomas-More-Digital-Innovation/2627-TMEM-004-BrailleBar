@@ -24,6 +24,9 @@ func newTestHandler(t *testing.T) (*Handler, *pgxpool.Pool) {
 	if url == "" {
 		t.Skip("DATABASE_URL not set")
 	}
+	if err := platform.LoadEncryptionKey(); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, url+"?search_path=document")
 	if err != nil {
@@ -66,8 +69,11 @@ func TestSubmitTextStoresDocumentAndEvent(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT text FROM document WHERE id = $1`, resp.DocumentID).Scan(&text); err != nil {
 		t.Fatalf("document not stored: %v", err)
 	}
-	if text != "hello world" {
-		t.Fatalf("stored %q, want %q", text, "hello world")
+	if strings.Contains(text, "hello") {
+		t.Fatalf("text is stored unencrypted: %q", text)
+	}
+	if plain, err := platform.Open(text); err != nil || string(plain) != "hello world" {
+		t.Fatalf("stored text opens as %q, %v", plain, err)
 	}
 
 	// The matching event must be waiting in the outbox. RunOutbox is not running in this test, so it stays there.

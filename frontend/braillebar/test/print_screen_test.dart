@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:braillebar/agent.dart';
 import 'package:braillebar/api.dart';
@@ -90,6 +91,51 @@ void main() {
     connection(true);
     await tester.pumpAndSettle();
     expect(find.text('Finished, you can take your paper'), findsOneWidget);
+  });
+
+  testWidgets('a picked file is sent and a refusal from OCR is spoken', (tester) async {
+    final statuses = StreamController<JobStatus>();
+    final sent = <String>[];
+    final api = Api('http://x', 'dev1', client: MockClient((req) async {
+      sent.add('${req.url.path} ${req.headers['Content-Type']} ${req.bodyBytes.length}');
+      return http.Response(jsonEncode({'documentId': 'd1'}), 201);
+    }));
+    await tester.pumpWidget(MaterialApp(home: PrintScreen(
+      api: api, link: connectedPrinter(), watch: (_) => statuses.stream,
+      pickFile: () async => Uint8List.fromList([1, 2, 3]),
+    )));
+
+    await tester.tap(find.text('Print a file'));
+    await tester.pumpAndSettle();
+    expect(sent, ['/documents/file application/octet-stream 3']);
+    expect(find.text('Reading your file'), findsOneWidget);
+
+    statuses.add(JobStatus.fromJson({
+      ...statusJson('d1', 'failed', 0), 'pageCount': 0, 'reason': 'This scan is hard to read. Please try again',
+    }));
+    await tester.pumpAndSettle();
+    expect(find.text('This scan is hard to read. Please try again'), findsOneWidget);
+  });
+
+  testWidgets('closing the picker sends nothing, an unsupported file is explained', (tester) async {
+    var calls = 0;
+    final api = Api('http://x', 'dev1', client: MockClient((req) async {
+      calls++;
+      return http.Response('unsupported', 415);
+    }));
+    Uint8List? picked;
+    await tester.pumpWidget(MaterialApp(home: PrintScreen(
+      api: api, link: connectedPrinter(), watch: (_) => const Stream.empty(), pickFile: () async => picked,
+    )));
+
+    await tester.tap(find.text('Print a file'));
+    await tester.pumpAndSettle();
+    expect(calls, 0);
+
+    picked = Uint8List.fromList([1]);
+    await tester.tap(find.text('Print a file'));
+    await tester.pumpAndSettle();
+    expect(find.text("This file can't be printed. Choose a PDF, a Word file or a photo"), findsOneWidget);
   });
 
   testWidgets('a server error says the text was not sent', (tester) async {

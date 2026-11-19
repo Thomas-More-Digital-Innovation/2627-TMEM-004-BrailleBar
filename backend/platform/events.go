@@ -24,6 +24,8 @@ type Envelope struct {
 	Type       string          `json:"type"`
 	OccurredAt time.Time       `json:"occurredAt"`
 	Payload    json.RawMessage `json:"payload"`
+	// W3C trace context of the request that caused this event; set by Enqueue and Publish.
+	Traceparent string `json:"traceparent,omitempty"`
 }
 
 func NewEnvelope(eventType string, payload any) (Envelope, error) {

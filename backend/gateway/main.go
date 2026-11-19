@@ -4,13 +4,18 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
+	"sync"
 	"syscall"
 	"time"
+
+	"BrailleBar/platform"
 )
 
 func main() {
@@ -18,6 +23,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	defer platform.InitTracing(ctx, "gateway")()
 
 	docURL := serviceURL("DOCUMENT_SERVICE_URL")
 	jobURL := serviceURL("PRINT_JOB_SERVICE_URL")
@@ -27,7 +33,12 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	srv := &http.Server{Addr: ":" + port, Handler: routes(docURL, jobURL, statusURL), ReadHeaderTimeout: 10 * time.Second}
+	perMinute, err := strconv.Atoi(os.Getenv("RATE_LIMIT_PER_MINUTE"))
+	if err != nil || perMinute < 1 {
+		slog.Error("config", "error", "RATE_LIMIT_PER_MINUTE must be a positive number")
+		os.Exit(1)
+	}
+	srv := &http.Server{Addr: ":" + port, Handler: platform.TraceHTTP(routes(docURL, jobURL, statusURL, perMinute)), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -43,7 +54,7 @@ func main() {
 }
 
 // routes forwards only the listed public routes; everything else (like /documents/{id}/content) is a 404.
-func routes(docURL, jobURL, statusURL *url.URL) http.Handler {
+func routes(docURL, jobURL, statusURL *url.URL, textsPerMinute int) http.Handler {
 	docs := httputil.NewSingleHostReverseProxy(docURL)
 	jobs := httputil.NewSingleHostReverseProxy(jobURL)
 	status := httputil.NewSingleHostReverseProxy(statusURL) // also proxies the websocket upgrade
@@ -53,7 +64,9 @@ func routes(docURL, jobURL, statusURL *url.URL) http.Handler {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
-	mux.Handle("POST /documents/text", requireDevice(docs))
+	limited := rateLimit(textsPerMinute) // text and files count towards the same limit
+	mux.Handle("POST /documents/text", requireDevice(limited(docs)))
+	mux.Handle("POST /documents/file", requireDevice(limited(docs)))
 	mux.Handle("GET /jobs", requireDevice(jobs))
 	mux.Handle("GET /jobs/{id}", requireDevice(jobs))
 	mux.Handle("GET /jobs/{id}/pages", requireDevice(jobs))
@@ -63,7 +76,51 @@ func routes(docURL, jobURL, statusURL *url.URL) http.Handler {
 		r.Header.Set("X-Device-Id", r.URL.Query().Get("deviceId"))
 		requireDevice(status).ServeHTTP(w, r)
 	})
-	return mux
+	return limitBody(mux)
+}
+
+// The Document Service decides what is too much text; this only keeps absurd uploads away from the services.
+const maxBodyBytes = 21 << 20
+
+func limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > maxBodyBytes {
+			http.Error(w, "request is too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// rateLimit allows perMinute requests per client IP in each clock minute. The device id can't be the key: a client
+// makes that up itself. Starting a new map every minute means it can't grow without bound.
+// ponytail: RemoteAddr is the proxy once deployed on Railway, so all users would share one limit; use its forwarded client IP then.
+func rateLimit(perMinute int) func(http.Handler) http.Handler {
+	var mu sync.Mutex
+	var window time.Time
+	counts := map[string]int{}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				ip = r.RemoteAddr
+			}
+			mu.Lock()
+			if now := time.Now().Truncate(time.Minute); !now.Equal(window) {
+				window, counts = now, map[string]int{}
+			}
+			counts[ip]++
+			over := counts[ip] > perMinute
+			mu.Unlock()
+			if over {
+				w.Header().Set("Retry-After", "60")
+				http.Error(w, "too many requests", http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func serviceURL(key string) *url.URL {

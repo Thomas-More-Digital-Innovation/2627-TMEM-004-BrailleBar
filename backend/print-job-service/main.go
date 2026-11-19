@@ -20,6 +20,10 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	defer platform.InitTracing(ctx, "print-job-service")()
+	if err := platform.LoadEncryptionKey(); err != nil {
+		fatal("encryption key", err)
+	}
 
 	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -32,6 +36,13 @@ func main() {
 	if err := migrate(ctx, pool); err != nil {
 		fatal("print_job table migration failed", err)
 	}
+
+	go func() {
+		err := platform.RunRetention(ctx, pool, "print_job")
+		if ctx.Err() == nil {
+			fatal("retention stopped", err)
+		}
+	}()
 
 	broker, err := platform.Connect(ctx, os.Getenv("RABBITMQ_URL"))
 	if err != nil {
@@ -69,7 +80,7 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	srv := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: ":" + port, Handler: platform.TraceHTTP(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

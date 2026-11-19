@@ -24,6 +24,9 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	if url == "" {
 		t.Skip("DATABASE_URL not set")
 	}
+	if err := platform.LoadEncryptionKey(); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	// own schema, so the running container's outbox loop doesn't publish (and delete) the test's events
 	pool, err := pgxpool.New(ctx, url+"?search_path=print_job_test")

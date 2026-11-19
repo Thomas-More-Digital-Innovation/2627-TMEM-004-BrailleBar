@@ -19,6 +19,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	defer platform.InitTracing(ctx, "notification-service")()
 
 	broker, err := platform.Connect(ctx, os.Getenv("RABBITMQ_URL"))
 	if err != nil {

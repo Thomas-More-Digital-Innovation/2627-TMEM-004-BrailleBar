@@ -30,6 +30,7 @@ var ErrBrokerLost = errors.New("broker connection lost")
 
 // Enqueue stores e inside tx. It is published only if tx commits.
 func Enqueue(ctx context.Context, tx pgx.Tx, e Envelope) error {
+	e.Traceparent = traceparent(ctx)
 	body, err := json.Marshal(e)
 	if err != nil {
 		return err

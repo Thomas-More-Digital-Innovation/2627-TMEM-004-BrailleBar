@@ -1,6 +1,8 @@
 // Load test of the whole path: open the status socket, send text, wait for the push that the job is queued.
-// Run: docker compose up -d --build --scale notification-service=2
-//      docker compose run --rm k6
+// Everything comes from one IP here, so raise the gateway's rate limit first (PowerShell):
+//   $env:RATE_LIMIT_PER_MINUTE = 100000; docker compose up -d --build --scale notification-service=2
+//   docker compose run --rm k6
+// Afterwards close that terminal, or Remove-Item Env:RATE_LIMIT_PER_MINUTE, and run docker compose up -d again.
 import http from 'k6/http';
 import ws from 'k6/ws';
 import { check } from 'k6';

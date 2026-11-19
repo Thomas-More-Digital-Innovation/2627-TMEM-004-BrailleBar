@@ -37,9 +37,17 @@ jobs:
         working-directory: backend/${{ matrix.service }}
         env:
           RABBITMQ_URL: amqp://guest:guest@localhost:5672/
+          DOCUMENT_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           # the services' tests add their own search_path, the platform tests need one given
           DATABASE_URL: postgres://braillebar:braillebar@localhost:5432/braillebar${{ matrix.service == 'platform' && '?search_path=document' || '' }}
         run: go test -count=1 ./...
+
+  ocr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target test -t ocr-test backend/ocr-service
+      - run: docker run --rm -v "$PWD/contracts:/contracts:ro" ocr-test
 
   app:
     runs-on: ubuntu-latest

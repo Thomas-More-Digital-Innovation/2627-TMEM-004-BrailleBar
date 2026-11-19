@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:braillebar/agent.dart';
 import 'package:braillebar/api.dart';
@@ -6,6 +7,7 @@ import 'package:braillebar/ble_link.dart';
 import 'package:braillebar/layout.dart';
 import 'package:braillebar/printer_screen.dart';
 import 'package:braillebar/status.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
@@ -72,9 +74,11 @@ class _HomeState extends State<Home> {
 }
 
 class PrintScreen extends StatefulWidget {
-  const PrintScreen({super.key, required this.api, required this.link, this.watch});
+  const PrintScreen({super.key, required this.api, required this.link, this.watch, this.pickFile});
   final Api api;
   final PrinterLink link;
+  // tests pass a fake file; the app opens the system file picker. null = nothing picked.
+  final Future<Uint8List?> Function()? pickFile;
   // tests pass fake statuses and connection changes; the app uses api.watchStatus
   final Stream<JobStatus> Function(void Function(bool connected) onConnection)? watch;
 
@@ -147,18 +151,39 @@ class _PrintScreenState extends State<PrintScreen> {
   }
 
   Future<void> _print() async {
+    await _send(() => widget.api.submitText(_text.text), 'Printing', onSent: _text.clear);
+  }
+
+  static Future<Uint8List?> _pickFromDisk() async {
+    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['pdf', 'docx', 'jpg', 'jpeg', 'png']);
+    return file?.readAsBytes();
+  }
+
+  Future<void> _printFile() async {
+    final bytes = await (widget.pickFile ?? _pickFromDisk)();
+    if (bytes == null) return; // the user closed the picker
+    await _send(() => widget.api.submitFile(bytes), 'Reading your file');
+  }
+
+  // firstMessage is said while the server works, until the first status arrives.
+  Future<void> _send(Future<String> Function() submit, String firstMessage, {void Function()? onSent}) async {
     setState(() => _sending = true);
     try {
-      final id = await widget.api.submitText(_text.text);
+      final id = await submit();
       _documentId = id;
-      _text.clear();
+      onSent?.call();
       final s = _statuses[id];
       final sentence = s == null ? null : describeStatus(s);
       _show(widget.link.connected.value
-          ? sentence ?? 'Printing'
+          ? sentence ?? firstMessage
           : "The printer is off or too far away. Your text will print when it's found");
-    } on ApiError {
-      _show('Your text was not sent, please try again');
+    } on ApiError catch (e) {
+      _show(switch (e.status) {
+        415 => "This file can't be printed. Choose a PDF, a Word file or a photo",
+        413 => 'This file is too large, the limit is 20 megabytes',
+        429 => 'Too many prints at once, please wait a minute',
+        _ => 'Your text was not sent, please try again',
+      });
     } catch (_) {
       _show('No internet connection, your text was not sent');
     } finally {
@@ -186,6 +211,8 @@ class _PrintScreenState extends State<PrintScreen> {
               onPressed: _text.text.trim().isEmpty || _sending ? null : _print,
               child: Text(_sending ? 'Sending' : 'Print'),
             ),
+            const SizedBox(height: 16),
+            OutlinedButton(onPressed: _sending ? null : _printFile, child: const Text('Print a file')),
             const SizedBox(height: 24),
             Text(_message, style: Theme.of(context).textTheme.headlineSmall),
           ],
