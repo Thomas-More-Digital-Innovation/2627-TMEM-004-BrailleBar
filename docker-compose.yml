@@ -1,4 +1,4 @@
-# Local development: infrastructure plus the Go services. The OCR service is added when it exists.
+# Local development: infrastructure plus the services.
 x-service: &service
   depends_on:
     rabbitmq:
@@ -53,10 +53,12 @@ services:
       - "8080:8080" # the only service the apps talk to
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/braillebar?search_path=gateway
       DOCUMENT_SERVICE_URL: ${DOCUMENT_SERVICE_URL}
       PRINT_JOB_SERVICE_URL: ${PRINT_JOB_SERVICE_URL}
       NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
 
   document-service:
     <<: *service
@@ -65,7 +67,10 @@ services:
       dockerfile: document-service/Dockerfile
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/braillebar?search_path=document
+      DOCUMENT_ENCRYPTION_KEY: ${DOCUMENT_ENCRYPTION_KEY}
+      RETENTION_DAYS: ${RETENTION_DAYS:-7}
 
   layout-service:
     <<: *service
@@ -74,7 +79,10 @@ services:
       dockerfile: layout-service/Dockerfile
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/braillebar?search_path=layout
+      DOCUMENT_ENCRYPTION_KEY: ${DOCUMENT_ENCRYPTION_KEY}
+      RETENTION_DAYS: ${RETENTION_DAYS:-7}
       DOCUMENT_SERVICE_URL: http://document-service:8080
       CELLS_PER_LINE: ${CELLS_PER_LINE:-30}
       LINES_PER_PAGE: ${LINES_PER_PAGE:-17}
@@ -86,7 +94,10 @@ services:
       dockerfile: print-job-service/Dockerfile
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/braillebar?search_path=print_job
+      DOCUMENT_ENCRYPTION_KEY: ${DOCUMENT_ENCRYPTION_KEY}
+      RETENTION_DAYS: ${RETENTION_DAYS:-7}
 
   notification-service:
     <<: *service
@@ -95,6 +106,24 @@ services:
       dockerfile: notification-service/Dockerfile
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+
+  ocr-service: # scale with --scale ocr-service=N
+    build: ./backend/ocr-service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      DOCUMENT_SERVICE_URL: http://document-service:8080
+
+  jaeger: # traces UI: http://localhost:16686
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      MEMORY_MAX_TRACES: 5000
+    ports:
+      - "127.0.0.1:16686:16686"
 
   k6: # only runs on request: docker compose run --rm k6
     image: grafana/k6:1.0.0

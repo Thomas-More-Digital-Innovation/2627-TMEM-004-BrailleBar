@@ -178,6 +178,7 @@ class FakePrinter implements PrinterLink {
 
   @override
   Future<void> send(String line) async {
+    debugPrint('fake printer: ${line.trim()}'); // shows in the terminal running flutter run
     if (!line.startsWith('CHUNK|')) return;
     final first = sent.isEmpty;
     sent.add(line);

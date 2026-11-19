@@ -88,7 +88,7 @@ Backend Services
 
 - API gateway - Entry point for the apps, routing, rate limiting - Go
 - Document Service - Uploads, file storage, metadata - Go, PostgreSQL
-- OCR Service - Text plus word and line positions, scales with more workers - Python, FastAPI
+- OCR Service - Text plus word and line positions, scales with more workers - Python, Tesseract
 - Layout Service - Fits OCR output into the printer's line width, keeps spacing - Go
 - Print Job Service - Job states, retries, cancelling - Go, PostgreSQL
 - Notification Service - Pushes status to the apps - Go, Websockets

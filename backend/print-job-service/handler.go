@@ -98,6 +98,10 @@ func (h *Handler) GetPages(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "get pages", err)
 		return
 	}
+	if pages, err = platform.OpenJSON(pages); err != nil {
+		serverError(w, "decrypt pages", err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"jobId": id, "pages": pages})
 }

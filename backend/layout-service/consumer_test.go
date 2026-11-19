@@ -24,6 +24,9 @@ func newTestConsumer(t *testing.T, text string) (*Consumer, *pgxpool.Pool) {
 	if url == "" {
 		t.Skip("DATABASE_URL not set")
 	}
+	if err := platform.LoadEncryptionKey(); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, url+"?search_path=layout")
 	if err != nil {
@@ -125,6 +128,51 @@ func TestHandleSkipsDocumentsThatNeedOcr(t *testing.T) {
 	pool.QueryRow(ctx, `SELECT count(*) FROM print_text WHERE document_id = $1`, documentID).Scan(&rows)
 	if rows != 0 {
 		t.Fatalf("a document that needs OCR was laid out")
+	}
+}
+
+func TestHandleLaysOutOcrResultOnce(t *testing.T) {
+	c, pool := newTestConsumer(t, "should not be used")
+	ctx := context.Background()
+	documentID := "33333333-3333-4333-8333-" + randomSuffix(t)
+	cleanup(t, pool, documentID)
+
+	line := func(text string) platform.OcrLine { return platform.OcrLine{Text: text, Words: []platform.OcrWord{}} }
+	e, err := platform.NewEnvelope(platform.DocumentOcrCompletedEvent, platform.DocumentOcrCompleted{
+		DocumentID: documentID, DeviceID: "dev-test", Pages: []platform.OcrPage{
+			{Page: 1, Lines: []platform.OcrLine{line("first line")}},
+			{Page: 2, Lines: []platform.OcrLine{line("second line")}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // the same event delivered twice
+		if err := c.Handle(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var bodies [][]byte
+	r, err := pool.Query(ctx, `SELECT body FROM outbox WHERE event_type = $1 AND convert_from(body, 'UTF8')::jsonb -> 'payload' ->> 'documentId' = $2`,
+		platform.DocumentLayoutCompletedEvent, documentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for r.Next() {
+		var b []byte
+		r.Scan(&b)
+		bodies = append(bodies, b)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("document.layout.completed events = %d, want 1", len(bodies))
+	}
+	var env platform.Envelope
+	var p platform.DocumentLayoutCompleted
+	json.Unmarshal(bodies[0], &env)
+	env.Decode(&p)
+	if !reflect.DeepEqual(p.Pages, [][]string{{"first line second line"}}) || p.DeviceID != "dev-test" {
+		t.Fatalf("wrong event payload: %+v", p)
 	}
 }
 

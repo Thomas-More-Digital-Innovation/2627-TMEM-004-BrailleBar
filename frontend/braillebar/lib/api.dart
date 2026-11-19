@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,7 +40,10 @@ class Api {
 
   Future<dynamic> _call(String method, String path, [Object? body]) async {
     final req = http.Request(method, Uri.parse('$baseUrl$path'))..headers['X-Device-Id'] = deviceId;
-    if (body != null) {
+    if (body is Uint8List) {
+      req.headers['Content-Type'] = 'application/octet-stream'; // the server reads the real type from the bytes
+      req.bodyBytes = body;
+    } else if (body != null) {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(body);
     }
@@ -53,6 +57,9 @@ class Api {
   /// Returns the new document id.
   Future<String> submitText(String text) async =>
       (await _call('POST', '/documents/text', {'text': text}))['documentId'];
+
+  /// A PDF, Word file or photo; the server reads its text. Returns the new document id.
+  Future<String> submitFile(Uint8List bytes) async => (await _call('POST', '/documents/file', bytes))['documentId'];
 
   Future<JobStatus> getJob(String jobId) async => JobStatus.fromJson(await _call('GET', _job(jobId)));
 
