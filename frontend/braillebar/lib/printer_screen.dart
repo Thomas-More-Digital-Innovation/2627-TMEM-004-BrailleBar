@@ -13,17 +13,14 @@ class PrinterScreen extends StatelessWidget {
     return AppLayout(
       title: 'Printer',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
         child: ValueListenableBuilder(
           valueListenable: link.connected,
           builder: (context, connected, _) => Column(
             crossAxisAlignment: .stretch,
             children: [
-              Icon(connected ? Icons.check_circle : Icons.bluetooth_searching, size: 96),
-              const SizedBox(height: 16),
               Text(
                 connected ? 'Printer connected: $printerName' : 'No printer connected. Looking for the printer',
-                textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
             ],

@@ -5,6 +5,7 @@ import 'package:braillebar/agent.dart';
 import 'package:braillebar/api.dart';
 import 'package:braillebar/ble_link.dart';
 import 'package:braillebar/layout.dart';
+import 'package:braillebar/paper.dart';
 import 'package:braillebar/printer_screen.dart';
 import 'package:braillebar/status.dart';
 import 'package:file_picker/file_picker.dart';
@@ -33,9 +34,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'BrailleBar',
-      theme: ThemeData(
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
+      theme: paperTheme(),
+      builder: (context, child) => Paper(child: child!),
       home: Home(api: api, link: link),
     );
   }
@@ -65,8 +65,8 @@ class _HomeState extends State<Home> {
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.edit), label: 'Type and print'),
-          NavigationDestination(icon: Icon(Icons.print), label: 'Printer'),
+          NavigationDestination(icon: Icon(Icons.edit_outlined), label: 'Type and print'),
+          NavigationDestination(icon: Icon(Icons.print_outlined), label: 'Printer'),
         ],
       ),
     );
@@ -195,14 +195,15 @@ class _PrintScreenState extends State<PrintScreen> {
   Widget build(BuildContext context) {
     return AppLayout(
       title: 'Type and print',
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
         child: Column(
           crossAxisAlignment: .stretch,
           children: [
             TextField(
               controller: _text,
-              decoration: const InputDecoration(labelText: 'Text to print', border: OutlineInputBorder()),
+              decoration: const InputDecoration(labelText: 'Text to print'),
+              style: Theme.of(context).textTheme.bodyLarge,
               minLines: 3,
               maxLines: 8,
             ),
@@ -211,9 +212,10 @@ class _PrintScreenState extends State<PrintScreen> {
               onPressed: _text.text.trim().isEmpty || _sending ? null : _print,
               child: Text(_sending ? 'Sending' : 'Print'),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             OutlinedButton(onPressed: _sending ? null : _printFile, child: const Text('Print a file')),
-            const SizedBox(height: 24),
+            // below the buttons, so nothing above moves when the message changes
+            const SizedBox(height: 32),
             Text(_message, style: Theme.of(context).textTheme.headlineSmall),
           ],
         ),
